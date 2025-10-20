@@ -57,11 +57,11 @@
             const favs = self.getFavs();
             return products.map(p => {
                 // API'den gelen string ID'yi tam sayıya çevirerek tutarlılık sağlıyoruz
-                const idNumber = Number(p.id); 
-                return { 
-                    ...p, 
+                const idNumber = Number(p.id); 
+                return { 
+                    ...p, 
                     id: idNumber, // Ürün nesnesindeki ID'yi de tam sayı yaptık
-                    isFavorite: favs.includes(idNumber) 
+                    isFavorite: favs.includes(idNumber) 
                 };
             });
         };
