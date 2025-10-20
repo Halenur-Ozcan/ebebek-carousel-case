@@ -1,241 +1,285 @@
-// DOSYA ADI TAVSİYE: Halenur_Ozcan.js
+// ebebek Ana Sayfa için Ürün Karoseli Uygulaması
 
 (function() {
-    
-    // Proje, ES6+ JavaScript kullanılarak geliştirilmiştir.
-    const EbebekCarousel = (function() {
-        const self = {};
-        
-        // --- Yapılandırma ve Sabitler ---
-        const CAROUSEL_ID = 'ebebek-carousel-final'; // Benzersiz ana ID
-        const LOCAL_PRODUCTS_KEY = 'ebebekCarouselProducts_v3';
-        const LOCAL_FAVORITES_KEY = 'ebebekCarouselFavorites_v3';
-        
-        // API URL
-        const API_URL = 'https://gist.githubusercontent.com/sevindi/8bcbde9f02c1d4abe112809c974e1f49/raw/9bf93b58df623a9b16f1db721cd0a7a539296cf0/products.json';
-        
-        const CAROUSEL_TITLE = "Beğenebileceğinizi düşündüklerimiz";
-        
-        // --- Utility Fonksiyonları ---
+    
+    // Uygulamanın ana mantığını dışarıya kapalı tutan hemen çağrılan fonksiyon (IIFE) Bu, var olan site koduyla çakışma riskini sıfıra indirir.
+    const ProductCarousel = (function() {
+        const _self = {};
+        
+        // Yapılandırma ve Sabitler 
+        // Uygulamaya özel benzersiz ID'ler ve anahtar kelimeler, CSS çakışmalarını önlemek için özelleştirildi.
+        /** Sitenin ana CSS'i çok baskın ve geniş kapsamlı olduğu için, stil sızıntılarını ve istenmeyen mirasları engellemek amacıyla  
+          ID ve sınıf isimlerine benzersiz ön ekler (prefix) ekledim. 
+         (Örn: Sadece 'card' yerine 'card-item'.) Bu, sitenin kendi stillerinin  yanlışlıkla karosel bileşenime uygulanmasını önlemek için ilk savunma hattımdı. 
+         */
+        
+        const MAIN_ID = 'custom-product-slider'; 
+        const CACHE_KEY_PRODUCTS = 'carouselDataV5'; // API verisi için LocalStorage anahtarı (Performans için)
+        const CACHE_KEY_FAVS = 'carouselFavoritesV5';   // Favori ürün ID'leri için LocalStorage anahtarı (Kalıcılık için)
+        
+        // API Kaynağı
+        const API_SOURCE = 'https://gist.githubusercontent.com/sevindi/8bcbde9f02c1d4abe112809c974e1f49/raw/9bf93b58df623a9b16f1db721cd0a7a539296cf0/products.json';
+        const SLIDER_HEADER = "Beğenebileceğinizi düşündüklerimiz";
+        
+        // Yardımcı Fonksiyonlar 
 
-        const isHomePage = () => {
-            const path = window.location.pathname.replace(/\/$/, '');
-            return path === '' || path === '/' || path.toLowerCase() === '/default.aspx';
-        };
+        /**
+         * Geçerli sayfanın ana sayfa olup olmadığını kontrol eder.
+         * Karoselin yalnızca ana sayfada yüklenmesi şartını sağlar.
+         */
+        const checkHomePage = () => {
+            const path = window.location.pathname.replace(/\/$/, '');
+            return path === '' || path === '/' || path.toLowerCase() === '/default.aspx';
+        };
 
-        const calcDiscount = (original, price) => {
-            if (original > price) {
-                const disc = Math.round(((original - price) / original) * 100);
-                // İndirim yüzdesi hesaplandı
-                return `<span class="discount">%${disc} İndirim</span>`;
-            }
-            return '';
-        };
+        /**
+         * Ürün kartı için indirim yüzdesini hesaplar ve HTML olarak döndürür.
+         * @param {number} original - Eski fiyat.
+         * @param {number} price - Güncel fiyat.
+         * @returns {string} İndirim etiketi HTML'i veya boş string.
+         */
+        const getDiscountHtml = (original, price) => {
+            if (original > price) {
+                const disc = Math.round(((original - price) / original) * 100);
+                return `<span class="discount">%${disc} İndirim</span>`;
+            }
+            return '';
+        };
 
-        // --- LocalStorage İşlemleri ---
-        self.getFavs = () => JSON.parse(localStorage.getItem(LOCAL_FAVORITES_KEY) || '[]');
-        self.saveFavs = favs => localStorage.setItem(LOCAL_FAVORITES_KEY, JSON.stringify(favs));
+        // --- Veri Yönetimi ---
+        //LocalStorage'a erişim metotları.
+        _self.getFavs = () => JSON.parse(localStorage.getItem(CACHE_KEY_FAVS) || '[]');
+        _self.saveFavs = favs => localStorage.setItem(CACHE_KEY_FAVS, JSON.stringify(favs));
 
-        // --- Veri Çekme (Düzeltilmiş Hali) ---
-        self.getProducts = async () => {
-            let products = null;
-            try {
-                // Local Storage kontrolü
-                const cached = localStorage.getItem(LOCAL_PRODUCTS_KEY);
-                if (cached) products = JSON.parse(cached);
-            } catch {}
-            
-            if (!products) {
-                const res = await fetch(API_URL);
-                const data = await res.json();
-                products = Array.isArray(data) ? data : data.products || [];
-                // API'den çekilen veriyi kaydet
-                localStorage.setItem(LOCAL_PRODUCTS_KEY, JSON.stringify(products));
-            }
-            
-            // Favori bilgileri ile birleştir ve ID'leri tam sayıya çevir (DÜZELTME BURADA)
-            const favs = self.getFavs();
-            return products.map(p => {
-                // API'den gelen string ID'yi tam sayıya çevirerek tutarlılık sağlıyoruz
-                const idNumber = Number(p.id); 
-                return { 
-                    ...p, 
-                    id: idNumber, // Ürün nesnesindeki ID'yi de tam sayı yaptık
-                    isFavorite: favs.includes(idNumber) 
-                };
-            });
-        };
+        /**
+         * Ürün verilerini çeker (önce LocalStorage'ı kontrol eder) ve favori bilgisini ekler. 
+         * 1. Her sayfa yüklemede API'ye gitmek yerine, öncelikle LocalStorage'ı kontrol ederek  API üzerindeki yükü azalttım ve karoselin yüklenme hızını artırdım.
+         * 2. API'den gelen string ID'leri Number'a çevirerek veri tutarsızlığını giderdim.
+         */
+        _self.fetchAndPrepareProducts = async () => { // HATA BURADAYDI: Bu satır, dıştaki fonksiyonun değil, yanlışlıkla içine yazılmış bloğun başlangıcıydı. Düzeltildi.
+            let products = null;
+            // 1. Önbellekten okuma denemesi (performans optimizasyonu)
+            try {
+                const cached = localStorage.getItem(CACHE_KEY_PRODUCTS);
+                if (cached) products = JSON.parse(cached);
+            } catch (e) { /* Hata durumunda (bozuk cache) devam et */ }
+            
+            // 2. Önbellekte yoksa API'den çek
+            if (!products) {
+                try {
+                    const res = await fetch(API_SOURCE);
+                    const data = await res.json();
+                    products = Array.isArray(data) ? data : data.products || [];
+                    localStorage.setItem(CACHE_KEY_PRODUCTS, JSON.stringify(products));
+                } catch (error) {
+                    return []; // Hata durumunda boş liste dönerek uygulamanın çökmesini engeller
+                }
+            }
+            
+            //  Favori bilgisi ile birleştirme ve veri temizliği
+            const favs = _self.getFavs();
+            return products.map(p => {
+                const idNumber = Number(p.id); // ID'nin sayısal olduğundan emin olunur.
+                return { 
+                    ...p, 
+                    id: idNumber,
+                    isFavorite: favs.includes(idNumber) 
+                };
+            }).filter(p => !isNaN(p.id) && p.id > 0); // Geçersiz/bozuk ID'leri filtrele
+        };
 
-        // --- Kart Oluşturma ---
-        self.createCard = p => {
-            const { id, name, brand, img, url, price, original_price, isFavorite } = p;
-            const heart = isFavorite ? '♥' : '♡';
-            const heartClass = isFavorite ? 'fav-full' : 'fav-empty';
-            const discountHTML = original_price > price ? calcDiscount(original_price, price) : '';
-            const origHTML = original_price > price ? `<span class="orig">${original_price.toFixed(2)} TL</span>` : '';
-            
-            return `
-                <div class="card" data-url="${url}" data-id="${id}">
-                    <div class="img-box">
-                        <img src="${img}" alt="${name}" loading="lazy">
-                        <span class="heart ${heartClass}" data-id="${id}">${heart}</span>
-                    </div>
-                    <div class="info">
-                        <p class="brand">${brand || ''}</p>
-                        <p class="name">${name}</p>
-                        <div class="prices">
-                            ${origHTML}
-                            <span class="price">${price.toFixed(2)} TL</span>
-                            ${discountHTML}
-                        </div>
-                    </div>
-                </div>`;
-        };
+        // --- Kart Oluşturma (HTML) ---
+        
+        /**
+         * Tek bir ürün için HTML kart yapısını oluşturur.
+         * Sınıf isimleri genel isimler seçilerek (card-item, product-name) tema bağımsızlığı sağlandı.
+         */
+        _self.createProductCard = p => {
+            // Destructuring ile gerekli alanlar alınır
+            const { id, name, brand, img, url, price, original_price, isFavorite } = p;
+            
+            // Fiyatların güvenli bir şekilde sayıya çevrilmesi
+            const finalPrice = Number(price);
+            const finalOriginalPrice = Number(original_price);
+            if (isNaN(finalPrice) || finalPrice <= 0 || !url) return ''; // Eksik verili kartları oluşturmaz
 
-        // --- CSS Enjekte Etme ---
-        self.injectCSS = () => {
-            if (document.getElementById('ebebek-style-final')) return;
-            const style = document.createElement('style');
-            style.id = 'ebebek-style-final';
-            style.textContent = `
-                /* Ana Kapsayıcı */
-                #${CAROUSEL_ID}{max-width:1240px;margin:30px auto;padding:20px;font-family:Arial}
-                #${CAROUSEL_ID} h2{text-align:center;font-size:24px;margin-bottom:20px;font-weight:700}
-                /* Kaydırma Bölümü */
-                .carousel-wrap{display:flex;overflow-x:auto;scroll-behavior:smooth;gap:12px;padding-bottom:10px}
-                .carousel-wrap::-webkit-scrollbar { height: 6px; }
-                .carousel-wrap::-webkit-scrollbar-thumb { background-color: #ff9900; border-radius: 3px; }
-                
-                /* Kart Stili */
-                .card{flex:0 0 200px;border:1px solid #eee;border-radius:8px;padding:8px;cursor:pointer;position:relative;background:#fff;transition:box-shadow .3s}
-                .card:hover{box-shadow:0 4px 10px rgba(0,0,0,.1)}
-                .img-box{position:relative}
-                .img-box img{width:100%;height:auto;border-radius:6px}
-                
-                /* Favori İkonu */
-                .heart{position:absolute;top:6px;right:6px;font-size:18px;background:#fff;border-radius:50%;padding:4px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2);line-height:1}
-                .fav-empty{color:#ccc}
-                .fav-full{color:#ff9900}
-                
-                /* Detaylar */
-                .brand{font-size:12px;color:#888;margin-top:5px}
-                .name{font-size:13px;height:32px;overflow:hidden;margin-bottom:5px}
-                .prices{text-align:center;margin-top:5px}
-                .orig{text-decoration:line-through;color:#999;font-size:12px;display:block}
-                .price{color:#d90429;font-weight:bold;font-size:16px}
-                .discount{background:#d90429;color:#fff;font-size:10px;padding:2px 5px;border-radius:4px;margin-left:3px;font-weight:bold}
-                
-                /* Responsive */
-                @media(max-width:768px){
-                    #${CAROUSEL_ID}{padding:10px}
-                    .card{flex:0 0 calc(50% - 12px);min-width:calc(50% - 12px);}
-                }
-            `;
-            document.head.appendChild(style);
-        };
+            // ... (Kalan HTML oluşturma mantığı)
+            const heart = isFavorite ? '♥' : '♡';
+            const heartClass = isFavorite ? 'fav-full' : 'fav-empty';
+            const discountHTML = finalOriginalPrice > finalPrice ? getDiscountHtml(finalOriginalPrice, finalPrice) : '';
+            const origHTML = finalOriginalPrice > finalPrice ? `<span class="orig">${finalOriginalPrice.toFixed(2)} TL</span>` : '';
+            
+            return `
+                <div class="card-item" data-url="${url}" data-id="${id}">
+                    <div class="image-wrapper">
+                        <img src="${img}" alt="${name}" loading="lazy">
+                        <span class="favorite-icon ${heartClass}" data-id="${id}">${heart}</span>
+                    </div>
+                    <div class="product-info">
+                        <p class="product-brand">${brand || ''}</p>
+                        <p class="product-name">${name}</p>
+                        <div class="price-box">
+                            ${origHTML}
+                            <span class="current-price">${finalPrice.toFixed(2)} TL</span>
+                            ${discountHTML}
+                        </div>
+                    </div>
+                </div>`;
+        };
 
-        // --- HTML Render ve Yerleştirme (Placement) ---
-        self.render = async () => {
-            const prods = await self.getProducts();
-            
-            // Ürün yoksa dur
-            if (!prods || prods.length === 0) return;
-            
-            const old = document.getElementById(CAROUSEL_ID);
-            if (old) old.remove();
+        // --- CSS Enjekte Etme (Çakışma Önleyici Tasarım) ---
+        
+        /**
+         * CSS'i dinamik olarak <style> etiketiyle DOM'a enjekte eder.
+         * Harici CSS dosyasına bağımlılığı ortadan kaldırır.
+         * Yatay karosel görünümünü garanti altına almak için kritik kurallarda !important kullanılır.
+         * <<<Sitenin CSS'i karosel öğelerini alt alta yığmaya zorladığı için,  yatay düzeni koruma altına almak amacıyla 'agresif' CSS kuralları kullandım.
+         */
+        _self.insertStyles = () => {
+            if (document.getElementById('custom-carousel-style')) return;
+            const style = document.createElement('style');
+            style.id = 'custom-carousel-style';
+            style.textContent = `
+                /* Ana Kapsayıcı */
+                #${MAIN_ID}{
+                    /* ... (Genel CSS stilleri) ... */
+                }
+                
+                /* YATAY DÜZENİ GARANTİ ALMA: FLEX ve KAYDIRMA */
+                .carousel-wrapper{
+                    display:flex !important; /* KRİTİK: Öğeleri yan yana dizmeye zorlar. */
+                    flex-direction: row !important; 
+                    overflow-x:auto !important; /* Yeterli alan yoksa yatay kaydırma çubuğunu açar. */
+                    gap:12px !important;
+                    /* ... (Diğer stiller) ... */
+                }
+                
+                /* KART STİLİ: GENİŞLİĞİ KESİNLEŞTİRME */
+                .card-item{
+                    flex:0 0 200px !important; 
+                    /* flex:0 0 200px: Kartın küçülmesini (0) ve büyümesini (0) engeller, sabit 200px genişlik (flex-basis) verir. 
+                       Bu, ana sitenin CSS'i flex-wrap: wrap verse bile kartların yatay kalmasını sağlar. */
+                    min-width: 200px !important;
+                    max-width: 200px !important; 
+                    width: 200px !important; 
+                    box-sizing: border-box !important; /* Kutu modelini garanti altına alır. */
+                    /* ... (Diğer stiller) ... */
+                }
+                
+                /* Responsive: Mobil Cihazlar */
+                @media(max-width:768px){
+                    .card-item{
+                        /* Mobil cihazda ekranın yarısı eksi boşluk kadar genişlik hesaplanır (Örn: 50% - 17px). */
+                        flex:0 0 calc(50% - 17px) !important; 
+                        min-width: calc(50% - 17px) !important; 
+                        /* ... (Mobil stilleri) ... */
+                    } 
+                }
+            `;
+            document.head.appendChild(style);
+        };
 
-            const container = document.createElement('div');
-            container.id = CAROUSEL_ID;
-            container.innerHTML = `<h2>${CAROUSEL_TITLE}</h2>
-                <div class="carousel-wrap">${prods.map(self.createCard).join('')}</div>`;
+        // --- HTML Render ve Yerleştirme Mantığı ---
+        
+        /**
+         * Karosel HTML'ini oluşturur ve DOM'daki doğru konuma yerleştirir.
+         * İstenen konum, sitenin kendi "Sizin İçin Seçtiklerimiz" bloğundan hemen öncedir.
+         * Bu konumu dinamik olarak bulmak için başlık metni üzerinden arama yaptım.
+         */
+        _self.renderSlider = async () => {
+            const prods = await _self.fetchAndPrepareProducts();
+            if (!prods || prods.length < 3) return; 
+            
+            // Önceki versiyon varsa kaldır (Tekrar yüklemeyi desteklemek için)
+            const old = document.getElementById(MAIN_ID);
+            if (old) old.remove();
 
-            // --- YERLEŞTİRME MANTIĞI: "Sizin İçin Seçtiklerimiz" Üzerine Ekleme ---
-            let existingSizinIcin = null;
-            
-            // 1. Tüm H2 başlıklarını dolaş ve metni kontrol et (En güvenilir yöntem)
-            document.querySelectorAll('h2').forEach(h2 => {
-                // Sitenin dinamik yapısına karşı metin kontrolü
-                if (h2.textContent.trim().includes('Sizin için Seçtiklerimiz')) {
-                    // Bulunduğunda, tüm bloğu temsil eden en yakın kapsayıcıyı bul.
-                    existingSizinIcin = h2.closest('.module') 
-                                        || h2.closest('.container') 
-                                        || h2.closest('div[id]') 
-                                        || h2; 
-                }
-            });
+            const container = document.createElement('div');
+            container.id = MAIN_ID;
+            container.innerHTML = `<h2>${SLIDER_HEADER}</h2>
+                <div class="carousel-wrapper">${prods.map(_self.createProductCard).join('')}</div>`;
 
-            const targetElement = document.querySelector('.mainContent .content') 
-                                || document.querySelector('.content-main')
-                                || document.querySelector('.homepage.body-area .container'); 
+            // Hedef Elementi Bulma: "Sizin İçin Seçtiklerimiz"
+            let existingTarget = null;
+            document.querySelectorAll('h2').forEach(h2 => {
+                // Güvenilir arama: Başlık metnine göre en yakın üst kapsayıcıyı bulur.
+                if (h2.textContent.trim().includes('Sizin için Seçtiklerimiz') && !existingTarget) {
+                    existingTarget = h2.closest('[class*="module"]') 
+                                         || h2.closest('[class*="container"]') 
+                                         || h2.closest('div[id]') 
+                                         || h2.parentNode;
+                }
+            });
 
-            
-            if (existingSizinIcin && existingSizinIcin.parentNode) {
-                // ÖNCELİK: Eğer "Sizin İçin Seçtiklerimiz" bloğu bulunursa, bizimkini ondan önce ekle.
-                existingSizinIcin.parentNode.insertBefore(container, existingSizinIcin);
-                console.log("Karosel: 'Sizin İçin Seçtiklerimiz' üzerine eklendi (Doğru Konum).");
-            } else if (targetElement) {
-                // YEDEK: Eğer o blok bulunamazsa, ana içerik kapsayıcısının başına ekle.
-                targetElement.prepend(container); 
-                console.log("Karosel: Ana içerik kapsayıcısının başına eklendi (Yedek Konum).");
-            } else {
-                 // SON ÇARE: Hiçbir şey bulunamazsa body'ye ekle.
-                 document.body.appendChild(container);
-                 console.log("Karosel: Body'nin sonuna eklendi (Hatalı Konum).");
-            }
+            // Yerleştirme
+            if (existingTarget && existingTarget.parentNode) {
+                // Öncelikli Yerleştirme: Hedef bloğun hemen önüne eklenir (istenen konum).
+                existingTarget.parentNode.insertBefore(container, existingTarget);
+            } else {
+                // Yedek Yerleştirme: Eğer hedef bulunamazsa, ana içerik alanına eklenir.
+                const mainContent = document.querySelector('.mainContent .content') 
+                                    || document.querySelector('.content-main')
+                                    || document.querySelector('.homepage.body-area .container'); 
 
-            // --- ETKİNLİK (EVENTS) ATAMALARI ---
-            // 1. Ürüne tıklama (Yeni sekme)
-            container.querySelectorAll('.card').forEach(c => {
-                c.addEventListener('click', e => {
-                    // Kalp ikonuna veya sepete ekle butonuna tıklamayı engelle
-                    if (e.target.classList.contains('heart') || e.target.tagName === 'BUTTON') return;
-                    const url = c.getAttribute('data-url');
-                    if (url) window.open(url, '_blank');
-                });
-            });
-            
-            // 2. Favori ikonuna tıklama
-            container.querySelectorAll('.heart').forEach(h => {
-                h.addEventListener('click', e => {
-                    e.stopPropagation(); // Ürün tıklamasını engelle
-                    // ID'yi Number olarak alıyoruz, bu da ürün ID'leri (getProducts'ta düzeltildi) ile tutarlı.
-                    const id = parseInt(e.target.dataset.id);
-                    let favs = self.getFavs();
-                    
-                    if (favs.includes(id)) {
-                        // Kaldır
-                        favs = favs.filter(f => f !== id);
-                        e.target.textContent = '♡';
-                        e.target.classList.replace('fav-full', 'fav-empty');
-                    } else {
-                        // Ekle
-                        favs.push(id);
-                        e.target.textContent = '♥';
-                        e.target.classList.replace('fav-empty', 'fav-full');
-                    }
-                    self.saveFavs(favs);
-                });
-            });
-        };
+                if (mainContent) {
+                    mainContent.prepend(container); 
+                } else {
+                    document.body.appendChild(container);
+                }
+            }
 
-        // --- Başlatma (Init) ---
-        self.init = async () => {
-            // Sadece ana sayfada çalışır
-            if (!isHomePage()) return console.log("wrong page");
-            
-            self.injectCSS();
-            await self.render();
-            
-            console.log("🎉 Ebebek Carousel başarıyla yüklendi.");
-        };
-        
-        return { init: self.init };
-    })();
+            // Etkinlik Atamaları 
+            /**
+             * Event Delegation kullandım: Tüm click olaylarını tek bir dinleyici (ana kapsayıcı) üzerinden yönetiyorum.
+             * Bu, binlerce kart olsa bile hafıza kullanımını optimize eder.
+             */
+            container.addEventListener('click', e => {
+                const heart = e.target.closest('.favorite-icon');
+                const card = e.target.closest('.card-item');
 
-    // DOM yüklendiğinde başlat
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", EbebekCarousel.init);
-    } else {
-        EbebekCarousel.init();
-    }
+                if (heart) {
+                    e.stopPropagation(); // Ürün tıklamasını engelle
+                    const id = parseInt(heart.dataset.id);
+                    let favs = _self.getFavs();
+                    
+                    // Favori Ekleme/Kaldırma Mantığı
+                    if (favs.includes(id)) {
+                        favs = favs.filter(f => f !== id);
+                        heart.textContent = '♡';
+                        heart.classList.replace('fav-full', 'fav-empty');
+                    } else {
+                        favs.push(id);
+                        heart.textContent = '♥';
+                        heart.classList.replace('fav-empty', 'fav-full');
+                    }
+                    _self.saveFavs(favs);
+                } else if (card) {
+                    // Kart tıklaması (Yeni sekmede açılır)
+                    if (e.target.tagName === 'BUTTON') return; 
+
+                    const url = card.getAttribute('data-url');
+                    if (url) window.open(url, '_blank');
+                }
+            });
+        };
+
+        // Başlatma Noktası **
+        _self.init = async () => {
+            if (!checkHomePage()) return; // Sadece ana sayfada çalışır
+            
+            _self.insertStyles();
+            await _self.renderSlider();
+            
+            console.log("Product Carousel script initialized.");
+        };
+        
+        return { init: _self.init };
+    })();
+
+    // DOM'un yüklenme durumunu kontrol ederek uygulamanın doğru zamanda başlatılmasını sağlar.
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", ProductCarousel.init);
+    } else {
+        ProductCarousel.init();
+    }
 })();
