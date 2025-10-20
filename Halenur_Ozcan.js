@@ -46,7 +46,7 @@
             return '';
         };
 
-        // --- Veri Yönetimi ---
+        //Veri Yönetimi 
         //LocalStorage'a erişim metotları.
         _self.getFavs = () => JSON.parse(localStorage.getItem(CACHE_KEY_FAVS) || '[]');
         _self.saveFavs = favs => localStorage.setItem(CACHE_KEY_FAVS, JSON.stringify(favs));
@@ -56,15 +56,15 @@
          * 1. Her sayfa yüklemede API'ye gitmek yerine, öncelikle LocalStorage'ı kontrol ederek  API üzerindeki yükü azalttım ve karoselin yüklenme hızını artırdım.
          * 2. API'den gelen string ID'leri Number'a çevirerek veri tutarsızlığını giderdim.
          */
-        _self.fetchAndPrepareProducts = async () => { // HATA BURADAYDI: Bu satır, dıştaki fonksiyonun değil, yanlışlıkla içine yazılmış bloğun başlangıcıydı. Düzeltildi.
+        _self.fetchAndPrepareProducts = async () => { 
             let products = null;
-            // 1. Önbellekten okuma denemesi (performans optimizasyonu)
+            // 1. Önbellekten okuma 
             try {
                 const cached = localStorage.getItem(CACHE_KEY_PRODUCTS);
                 if (cached) products = JSON.parse(cached);
             } catch (e) { /* Hata durumunda (bozuk cache) devam et */ }
             
-            // 2. Önbellekte yoksa API'den çek
+            // 2. Önbellekte yoksa API'den çektir
             if (!products) {
                 try {
                     const res = await fetch(API_SOURCE);
@@ -88,8 +88,7 @@
             }).filter(p => !isNaN(p.id) && p.id > 0); // Geçersiz/bozuk ID'leri filtrele
         };
 
-        // --- Kart Oluşturma (HTML) ---
-        
+        // Kart Oluşturma (HTML) 
         /**
          * Tek bir ürün için HTML kart yapısını oluşturur.
          * Sınıf isimleri genel isimler seçilerek (card-item, product-name) tema bağımsızlığı sağlandı.
@@ -103,7 +102,7 @@
             const finalOriginalPrice = Number(original_price);
             if (isNaN(finalPrice) || finalPrice <= 0 || !url) return ''; // Eksik verili kartları oluşturmaz
 
-            // ... (Kalan HTML oluşturma mantığı)
+            // . (Kalan HTML oluşturma mantığı)
             const heart = isFavorite ? '♥' : '♡';
             const heartClass = isFavorite ? 'fav-full' : 'fav-empty';
             const discountHTML = finalOriginalPrice > finalPrice ? getDiscountHtml(finalOriginalPrice, finalPrice) : '';
@@ -130,10 +129,10 @@
         // --- CSS Enjekte Etme (Çakışma Önleyici Tasarım) ---
         
         /**
-         * CSS'i dinamik olarak <style> etiketiyle DOM'a enjekte eder.
-         * Harici CSS dosyasına bağımlılığı ortadan kaldırır.
-         * Yatay karosel görünümünü garanti altına almak için kritik kurallarda !important kullanılır.
-         * <<<Sitenin CSS'i karosel öğelerini alt alta yığmaya zorladığı için,  yatay düzeni koruma altına almak amacıyla 'agresif' CSS kuralları kullandım.
+          CSS'i dinamik olarak <style> etiketiyle DOM'a enjekte eder.
+          Harici CSS dosyasına bağımlılığı ortadan kaldırır.
+          Yatay karosel görünümünü garanti altına almak için kritik kurallarda !important kullanılır.
+        <<<Sitenin CSS'i karosel öğelerini alt alta yığmaya zorladığı için,  yatay düzeni koruma altına almak amacıyla 'agresif' CSS kuralları kullandım.
          */
         _self.insertStyles = () => {
             if (document.getElementById('custom-carousel-style')) return;
